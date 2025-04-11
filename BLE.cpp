@@ -1,6 +1,7 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
+#include <Arduino.h>
 
 BLECharacteristic *pBLECharacteristic;
 std::string bleStatus = "⏳ Đang chờ dữ liệu từ BLE...";
