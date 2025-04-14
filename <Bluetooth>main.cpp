@@ -30,7 +30,7 @@
 #define VIRTUAL_LIGHT V5
 
 // Hardware Pins
-#define LED_PIN 4
+#define LED_PIN 26
 #define DHTPIN 5
 #define DHTTYPE DHT11
 #define PUMP_PIN 18
