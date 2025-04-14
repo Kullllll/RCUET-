@@ -12,7 +12,26 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
-#include <DHT.h>  // 🆕 Thư viện DHT
+#include <DHT.h>  
+
+// ==== Blynk ảo & phần cứng ====
+#define VIRTUAL_TEMP V0
+#define VIRTUAL_HUMID V1
+#define VIRTUAL_DOOR V5
+
+#define SS_PIN 5
+#define RST_PIN 16
+#define BUZZER_PIN 12
+#define PIN_SG90 27
+#define PIN_SG90_2 13
+#define RAIN_SENSOR_PIN 34
+#define FLAME_SENSOR_PIN 33
+#define GAS_SENSOR_PIN 35
+#define BUTTON1_PIN 26
+#define BUTTON2_PIN 14      
+#define DHTPIN 15             
+#define DHTTYPE DHT11 
+#define SERVO_PIN 25
 
 // ==== BLE setup ====
 BLECharacteristic *pBLECharacteristic;
@@ -63,24 +82,6 @@ void setupBLE() {
   Serial.println("🔵 BLE sẵn sàng. Gửi 'SSID,PASS' từ LightBlue/nRF Connect");
 }
 
-// ==== Blynk ảo & phần cứng ====
-#define VIRTUAL_TEMP V0
-#define VIRTUAL_HUMID V1
-#define VIRTUAL_DOOR V5
-
-#define SS_PIN 5
-#define RST_PIN 16
-#define BUZZER_PIN 12
-#define PIN_SG90 27
-#define PIN_SG90_2 13
-#define RAIN_SENSOR_PIN 34
-#define FLAME_SENSOR_PIN 33
-#define GAS_SENSOR_PIN 35
-#define BUTTON1_PIN 26
-#define BUTTON2_PIN 14      
-#define DHTPIN 15             
-#define DHTTYPE DHT11 
-#define SERVO_PIN 25
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
