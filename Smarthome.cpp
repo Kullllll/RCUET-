@@ -12,6 +12,7 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
+#include <DHT.h>  // 🆕 Thư viện DHT
 
 // ==== BLE setup ====
 BLECharacteristic *pBLECharacteristic;
@@ -74,9 +75,17 @@ void setupBLE() {
 #define PIN_SG90_2 13
 #define RAIN_SENSOR_PIN 34
 #define FLAME_SENSOR_PIN 33
+#define GAS_SENSOR_PIN 35
+#define BUTTON1_PIN 26
+#define BUTTON2_PIN 14      
+#define DHTPIN 15             
+#define DHTTYPE DHT11 
+#define SERVO_PIN 25
+
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-Servo sg90, sg90_2;
+Servo sg90, sg90_2, sg360;
+DHT dht(DHTPIN, DHTTYPE);     // 🆕 Tạo đối tượng cảm biến DHT
 
 byte validUID1[4] = {0x13, 0xA2, 0x1A, 0x2D};
 byte validUID2[4] = {0x5A, 0xB2, 0xB5, 0x02};
@@ -84,8 +93,8 @@ byte validUID2[4] = {0x5A, 0xB2, 0xB5, 0x02};
 bool doorOpen = false;
 String ssid_input = "";
 String password_input = "";
+bool reverseDirection = false;  // 🆕 Biến điều khiển chiều quay servo 360
 
-// === WiFi connection ===
 void setup_wifi() {
   WiFi.begin(ssid_input.c_str(), password_input.c_str());
   Serial.print("📶 Đang kết nối tới WiFi: ");
@@ -110,7 +119,6 @@ void setup_wifi() {
   pBLECharacteristic->notify();
 }
 
-// === RFID & Servo ===
 bool compareUID(byte *cardUID, byte *targetUID) {
   for (byte i = 0; i < 4; i++) {
     if (cardUID[i] != targetUID[i]) return false;
@@ -163,7 +171,7 @@ void checkRFID() {
     lcd.setCursor(0, 0);
     lcd.print("Access Granted");
 
-    beep(200);  // 📢 Kêu khi đúng
+    beep(200);
     delay(2000);
 
     sg90.write(180);
@@ -182,19 +190,29 @@ void checkRFID() {
     lcd.setCursor(0, 0);
     lcd.print("Access Denied");
 
-    beep(500);  // 📢 Kêu dài khi sai
+    beep(500);
   }
 
   mfrc522.PICC_HaltA();
 }
 
 void readSensors() {
-  int temperature = random(20, 35);
-  int humidity = random(40, 80);
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+
+  if (isnan(temperature) || isnan(humidity)) {
+    Serial.println("❌ Không đọc được dữ liệu từ DHT11!");
+    return;
+  }
+
   Serial.print("🌡 Temp: "); Serial.println(temperature);
   Serial.print("💧 Humi: "); Serial.println(humidity);
   Blynk.virtualWrite(VIRTUAL_TEMP, temperature);
   Blynk.virtualWrite(VIRTUAL_HUMID, humidity);
+
+  lcd.setCursor(0, 1);
+  lcd.print("T:"); lcd.print(temperature); lcd.print("C ");
+  lcd.print("H:"); lcd.print(humidity); lcd.print("%");
   delay(500);
 }
 
@@ -203,6 +221,8 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(RAIN_SENSOR_PIN, INPUT);
   pinMode(FLAME_SENSOR_PIN, INPUT);
+  pinMode(BUTTON1_PIN, INPUT_PULLUP);
+  pinMode(BUTTON2_PIN, INPUT_PULLUP);  // 🆕 Nút đảo chiều
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
@@ -213,8 +233,12 @@ void setup() {
 
   sg90.attach(PIN_SG90, 500, 2400);
   sg90_2.attach(PIN_SG90_2, 500, 2400);
+  sg360.attach(SERVO_PIN);
   sg90.write(0);
   sg90_2.write(0);
+  sg360.write(90);
+
+  dht.begin(); // 🆕 Khởi động cảm biến DHT
 
   setupBLE();
 
@@ -263,6 +287,7 @@ void loop() {
     Serial.println("☀️ Không mưa → servo 2 quay về 0 độ");
     sg90_2.write(0);
   }
+
   int flameState = analogRead(FLAME_SENSOR_PIN);
   Serial.println(flameState);
   if (flameState >= 200) {
@@ -270,5 +295,28 @@ void loop() {
   } else {
     Serial.println("🔥 Có lửa!");
   }
-  delay(200);
+
+  int gasState = analogRead(GAS_SENSOR_PIN);
+  Serial.println(gasState);
+  if (gasState <= 1000){
+    Serial.println("✅ Không có gas.");
+  } else {
+    Serial.println("💨 Có gas!");
+  }
+
+  bool currentButtonState = digitalRead(BUTTON1_PIN) == LOW;
+  bool reverseButtonState = digitalRead(BUTTON2_PIN) == LOW;
+
+
+  if (currentButtonState && !reverseButtonState) {
+    sg360.write(180);
+    Serial.println("🔁 Servo 360 đang quay...");
+  } else if (reverseButtonState && !currentButtonState) {
+    sg360.write(0);
+    Serial.println("⏹ Servo 360 đã dừng hoàn toàn.");
+  } else {
+    sg360.write(92);
+  }
+
+  delay(1000);
 }
