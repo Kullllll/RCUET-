@@ -1,6 +1,6 @@
-#define BLYNK_TEMPLATE_ID "TMPL69RLnAsWY"
-#define BLYNK_TEMPLATE_NAME "Smarth"
-#define BLYNK_AUTH_TOKEN "BVNuiOIoCI5yycSayX7Wsqbs5PMk0N_K"
+#define BLYNK_TEMPLATE_ID "TMPL6Oeg9D1sm"
+#define BLYNK_TEMPLATE_NAME "Smart Home"
+#define BLYNK_AUTH_TOKEN "uolR8s3zBUesc_aiMwuZqKdzrO7is94q"
 
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
@@ -17,6 +17,9 @@
 // ==== Blynk ảo & phần cứng ====
 #define VIRTUAL_TEMP V0
 #define VIRTUAL_HUMID V1
+#define VIRTUAL_RAIN V2
+#define VIRTUAL_FLAME V3
+#define VIRTUAL_GAS V4
 #define VIRTUAL_DOOR V5
 
 #define SS_PIN 5
@@ -82,11 +85,10 @@ void setupBLE() {
   Serial.println("🔵 BLE sẵn sàng. Gửi 'SSID,PASS' từ LightBlue/nRF Connect");
 }
 
-
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 Servo sg90, sg90_2, sg360;
-DHT dht(DHTPIN, DHTTYPE);     // 🆕 Tạo đối tượng cảm biến DHT
+DHT dht(DHTPIN, DHTTYPE); 
 
 byte validUID1[4] = {0x13, 0xA2, 0x1A, 0x2D};
 byte validUID2[4] = {0x5A, 0xB2, 0xB5, 0x02};
@@ -94,7 +96,7 @@ byte validUID2[4] = {0x5A, 0xB2, 0xB5, 0x02};
 bool doorOpen = false;
 String ssid_input = "";
 String password_input = "";
-bool reverseDirection = false;  // 🆕 Biến điều khiển chiều quay servo 360
+bool reverseDirection = false;
 
 void setup_wifi() {
   WiFi.begin(ssid_input.c_str(), password_input.c_str());
@@ -171,8 +173,9 @@ void checkRFID() {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Access Granted");
+    Blynk.virtualWrite(VIRTUAL_DOOR, HIGH);
 
-    beep(200);
+    beep(500);
     delay(2000);
 
     sg90.write(180);
@@ -182,6 +185,7 @@ void checkRFID() {
     saveDoorState(false);
 
     Serial.println("🔒 Cửa đã đóng");
+    Blynk.virtualWrite(VIRTUAL_DOOR, LOW);
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Door closed");
@@ -223,11 +227,11 @@ void setup() {
   pinMode(RAIN_SENSOR_PIN, INPUT);
   pinMode(FLAME_SENSOR_PIN, INPUT);
   pinMode(BUTTON1_PIN, INPUT_PULLUP);
-  pinMode(BUTTON2_PIN, INPUT_PULLUP);  // 🆕 Nút đảo chiều
+  pinMode(BUTTON2_PIN, INPUT_PULLUP); 
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("🔋 Khoi dong...");
+  lcd.print("Khoi dong...");
 
   SPI.begin();
   mfrc522.PCD_Init();
@@ -239,11 +243,11 @@ void setup() {
   sg90_2.write(0);
   sg360.write(90);
 
-  dht.begin(); // 🆕 Khởi động cảm biến DHT
+  dht.begin(); 
 
   setupBLE();
 
-  Serial.println("✅ Đã khởi động xong!");
+  Serial.println("Đã khởi động xong!");
 }
 
 void loop() {
@@ -280,6 +284,7 @@ void loop() {
   int rainState = digitalRead(RAIN_SENSOR_PIN);
   Serial.print("📊 Trạng thái cảm biến mưa (digital): ");
   Serial.println(rainState);
+  Blynk.virtualWrite(VIRTUAL_RAIN, rainState == LOW ? 1 : 0);
 
   if (rainState == LOW) {
     Serial.println("🌧 Có mưa → servo 2 quay 90 độ");
@@ -293,21 +298,24 @@ void loop() {
   Serial.println(flameState);
   if (flameState >= 200) {
     Serial.println("✅ Không có lửa.");
+    Blynk.virtualWrite(VIRTUAL_FLAME, LOW);
   } else {
     Serial.println("🔥 Có lửa!");
+    Blynk.virtualWrite(VIRTUAL_FLAME, HIGH);
   }
 
   int gasState = analogRead(GAS_SENSOR_PIN);
   Serial.println(gasState);
   if (gasState <= 1000){
     Serial.println("✅ Không có gas.");
+    Blynk.virtualWrite(VIRTUAL_GAS, LOW);
   } else {
     Serial.println("💨 Có gas!");
+    Blynk.virtualWrite(VIRTUAL_GAS, HIGH);
   }
 
   bool currentButtonState = digitalRead(BUTTON1_PIN) == LOW;
   bool reverseButtonState = digitalRead(BUTTON2_PIN) == LOW;
-
 
   if (currentButtonState && !reverseButtonState) {
     sg360.write(180);
