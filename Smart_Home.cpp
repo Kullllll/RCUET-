@@ -278,11 +278,16 @@ void loop() {
     Blynk.virtualWrite(VIRTUAL_GAS, HIGH);
   }
 
-  while (VIRTUAL_FLAME == HIGH || VIRTUAL_GAS == HIGH){
+  bool flameDetected = (analogRead(FLAME_SENSOR_PIN) <= 200);
+  bool gasDetected = (analogRead(GAS_SENSOR_PIN) >1000);
+
+  while (flameDetected || gasDetected){
     beep(1000);
     saveDoorState(true);
     Blynk.virtualWrite(VIRTUAL_DOOR, HIGH);
     delay(300);
+    flameDetected = (analogRead(FLAME_SENSOR_PIN) <= 200);
+    gasDetected = (analogRead(GAS_SENSOR_PIN) >1000);
   }
 
   bool currentButtonState = digitalRead(BUTTON1_PIN) == LOW;
