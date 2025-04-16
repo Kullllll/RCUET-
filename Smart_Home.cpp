@@ -1,6 +1,6 @@
-#define BLYNK_TEMPLATE_ID "TMPL6Oeg9D1sm"
-#define BLYNK_TEMPLATE_NAME "Smart Home"
-#define BLYNK_AUTH_TOKEN "uolR8s3zBUesc_aiMwuZqKdzrO7is94q"
+#define BLYNK_TEMPLATE_ID "TMPL6wGWd4RCq"
+#define BLYNK_TEMPLATE_NAME "SmartHome"
+#define BLYNK_AUTH_TOKEN "yGK7fp5T1RZDb49hFtaMSWKUNeep84xe"
 
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
@@ -21,6 +21,8 @@
 #define VIRTUAL_FLAME V3
 #define VIRTUAL_GAS V4
 #define VIRTUAL_DOOR V5
+#define VIRTUAL_GARAGE_OPEN V6
+#define VIRTUAL_GARAGE_CLOSE V7 
 
 #define SS_PIN 5
 #define RST_PIN 16
@@ -35,6 +37,8 @@
 #define DHTPIN 15             
 #define DHTTYPE DHT11 
 #define SERVO_PIN 25
+
+WidgetTerminal terminal(V8);
 
 // ==== BLE setup ====
 BLECharacteristic *pBLECharacteristic;
@@ -77,7 +81,6 @@ void setupBLE() {
   pService->start();
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->start();
-
 }
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
@@ -93,6 +96,9 @@ String ssid_input = "";
 String password_input = "";
 bool reverseDirection = false;
 
+bool garageForward = false;
+bool garageReverse = false;
+
 void setup_wifi() {
   WiFi.begin(ssid_input.c_str(), password_input.c_str());
   int retry = 0;
@@ -104,8 +110,10 @@ void setup_wifi() {
   if (WiFi.status() == WL_CONNECTED) {
     wifiReady = true;
     bleStatus = "✅ Kết nối WiFi thành công!";
+    terminal.println("✅ Kết nối WiFi thành công!");
   } else {
     bleStatus = "❌ Kết nối WiFi thất bại!";
+    terminal.println("❌ Kết nối WiFi thất bại!");
   }
 
   pBLECharacteristic->setValue(bleStatus);
@@ -129,11 +137,12 @@ void saveDoorState(bool state) { doorOpen = state; }
 
 void restoreDoorState() {
   if (doorOpen) {
-    sg90.write(0);
+    sg90.write(90);
     doorOpen = false;
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Door closed");
+    terminal.println("Door closed");
   }
 }
 
@@ -141,13 +150,13 @@ void checkRFID() {
   if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
     lcd.setCursor(0, 0);
     lcd.print("Scan card...     ");
+    terminal.println("Scan card...     ");
     return;
   }
 
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("UID: ");
-
   for (byte i = 0; i < mfrc522.uid.size; i++) {
     lcd.print(mfrc522.uid.uidByte[i], HEX);
     lcd.print(" ");
@@ -157,6 +166,7 @@ void checkRFID() {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Access Granted");
+    terminal.println("Access Granted");
     Blynk.virtualWrite(VIRTUAL_DOOR, HIGH);
 
     beep(500);
@@ -165,18 +175,19 @@ void checkRFID() {
     sg90.write(180);
     saveDoorState(true);
     delay(5000);
-    sg90.write(0);
+    sg90.write(90);
     saveDoorState(false);
 
     Blynk.virtualWrite(VIRTUAL_DOOR, LOW);
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Door closed");
+    terminal.println("Door closed");
   } else {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Access Denied");
-
+    terminal.println("Access Denied");
     beep(500);
   }
 
@@ -197,7 +208,31 @@ void readSensors() {
   lcd.setCursor(0, 1);
   lcd.print("T:"); lcd.print(temperature); lcd.print("C ");
   lcd.print("H:"); lcd.print(humidity); lcd.print("%");
+  terminal.print("T:"); terminal.print(temperature); terminal.print("C \n");
+  terminal.print("H:"); terminal.print(humidity); terminal.print("%\n");
+  terminal.flush();
   delay(500);
+}
+
+void updateGarageServo() {
+  if (garageForward && !garageReverse) {
+    sg360.write(180); // quay xuôi
+  } else if (garageReverse && !garageForward) {
+    sg360.write(0); // quay ngược
+  } else {
+    sg360.write(92); // dừng
+  }
+}
+
+// ===== Blynk SWITCH điều khiển servo 360 độ =====
+BLYNK_WRITE(VIRTUAL_GARAGE_OPEN) {
+  garageForward = param.asInt();
+  updateGarageServo();
+}
+
+BLYNK_WRITE(VIRTUAL_GARAGE_CLOSE) {
+  garageReverse = param.asInt();
+  updateGarageServo();
 }
 
 void setup() {
@@ -211,6 +246,7 @@ void setup() {
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("Khoi dong...");
+  terminal.println("Khoi dong...");
 
   SPI.begin();
   mfrc522.PCD_Init();
@@ -218,14 +254,12 @@ void setup() {
   sg90.attach(PIN_SG90, 500, 2400);
   sg90_2.attach(PIN_SG90_2, 500, 2400);
   sg360.attach(SERVO_PIN);
-  sg90.write(0);
+  sg90.write(90);
   sg90_2.write(0);
-  sg360.write(90);
+  sg360.write(92); // dừng ban đầu
 
   dht.begin(); 
-
   setupBLE();
-
 }
 
 void loop() {
@@ -243,6 +277,7 @@ void loop() {
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("WiFi OK. Blynk on");
+        terminal.print("WiFi OK. Blynk on");
         delay(1000);
         restoreDoorState();
       }
@@ -257,7 +292,6 @@ void loop() {
 
   int rainState = digitalRead(RAIN_SENSOR_PIN);
   Blynk.virtualWrite(VIRTUAL_RAIN, rainState == LOW ? 1 : 0);
-
   if (rainState == LOW) {
     sg90_2.write(90);
   } else {
@@ -272,33 +306,44 @@ void loop() {
   }
 
   int gasState = analogRead(GAS_SENSOR_PIN);
-  if (gasState <= 1000){
+  if (gasState <= 800){
     Blynk.virtualWrite(VIRTUAL_GAS, LOW);
   } else {
     Blynk.virtualWrite(VIRTUAL_GAS, HIGH);
   }
 
-  bool flameDetected = (analogRead(FLAME_SENSOR_PIN) <= 200);
-  bool gasDetected = (analogRead(GAS_SENSOR_PIN) >1000);
-
-  while (flameDetected || gasDetected){
-    beep(1000);
+  bool flameDetected = (flameState <= 200);
+  bool gasDetected = (gasState > 1000);
+  if (flameDetected || gasDetected) {
+    // Mở cửa
+    sg90.write(180);
     saveDoorState(true);
     Blynk.virtualWrite(VIRTUAL_DOOR, HIGH);
-    delay(300);
-    flameDetected = (analogRead(FLAME_SENSOR_PIN) <= 200);
-    gasDetected = (analogRead(GAS_SENSOR_PIN) >1000);
+
+    // Còi kêu liên tục cho đến khi an toàn
+    while (flameDetected || gasDetected) {
+      beep(1000);
+      delay(300);
+
+      flameDetected = (analogRead(FLAME_SENSOR_PIN) <= 200);
+      gasDetected = (analogRead(GAS_SENSOR_PIN) > 1000);
+    }
+
+    // Khi hết nguy hiểm: đóng cửa
+    sg90.write(90);
+    saveDoorState(false);
+    Blynk.virtualWrite(VIRTUAL_DOOR, LOW);
   }
 
+  // Nút vật lý điều khiển servo 360
   bool currentButtonState = digitalRead(BUTTON1_PIN) == LOW;
   bool reverseButtonState = digitalRead(BUTTON2_PIN) == LOW;
-
   if (currentButtonState && !reverseButtonState) {
     sg360.write(180);
   } else if (reverseButtonState && !currentButtonState) {
     sg360.write(0);
-  } else {
-    sg360.write(92);
+  } else if (!garageForward && !garageReverse) {
+    sg360.write(92); // chỉ dừng nếu cả Blynk và nút đều tắt
   }
 
   delay(1000);
