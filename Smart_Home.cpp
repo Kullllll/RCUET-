@@ -66,7 +66,7 @@ class BLECallback : public BLECharacteristicCallbacks {
 };
 
 void setupBLE() {
-  BLEDevice::init("Home Home");
+  BLEDevice::init("SmartHome");
   BLEServer *pServer = BLEDevice::createServer();
   BLEService *pService = pServer->createService("12345678-1234-1234-1234-1234567890ab");
 
