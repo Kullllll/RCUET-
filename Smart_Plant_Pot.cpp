@@ -73,7 +73,7 @@ class BLECallback : public BLECharacteristicCallbacks {
 };
 
 void setupBLE() {
-  BLEDevice::init("ESP32 của Link Link Link");
+  BLEDevice::init("SmartPlantPot");
   BLEServer *pServer = BLEDevice::createServer();
   BLEService *pService = pServer->createService("12345678-1234-1234-1234-1234567890ab");
 
