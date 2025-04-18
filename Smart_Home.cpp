@@ -1,4 +1,4 @@
-//Smart_Home
+//Smart Home
 #define BLYNK_TEMPLATE_ID "TMPL6gP7fXMxS"
 #define BLYNK_TEMPLATE_NAME "Smart Home"
 #define BLYNK_AUTH_TOKEN "lkM5hQg2XQjv_kwpEneU5fyOTvr-zHdW"
@@ -29,7 +29,7 @@
 #define RST_PIN 16
 #define BUZZER_PIN 12
 #define PIN_SG90 27
-#define PIN_SG90_2 13
+#define PIN_SG90_2 32
 #define RAIN_SENSOR_PIN 34
 #define FLAME_SENSOR_PIN 33
 #define GAS_SENSOR_PIN 35
@@ -256,7 +256,7 @@ void setup() {
   sg90_2.attach(PIN_SG90_2, 500, 2400);
   sg360.attach(SERVO_PIN);
   sg90.write(90);
-  sg90_2.write(0);
+  sg90_2.write(45);
   sg360.write(92); // dừng ban đầu
 
   dht.begin(); 
@@ -294,9 +294,9 @@ void loop() {
   int rainState = digitalRead(RAIN_SENSOR_PIN);
   Blynk.virtualWrite(VIRTUAL_RAIN, rainState == LOW ? 1 : 0);
   if (rainState == LOW) {
-    sg90_2.write(90);
-  } else {
     sg90_2.write(0);
+  } else {
+    sg90_2.write(45);
   }
 
   int flameState = analogRead(FLAME_SENSOR_PIN);
@@ -349,3 +349,4 @@ void loop() {
 
   delay(1500);
 }
+
