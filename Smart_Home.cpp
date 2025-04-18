@@ -347,5 +347,5 @@ void loop() {
     sg360.write(92); // chỉ dừng nếu cả Blynk và nút đều tắt
   }
 
-  delay(1000);
+  delay(1500);
 }
