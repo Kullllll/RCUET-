@@ -1,45 +1,45 @@
-//Smart Home
-#define BLYNK_TEMPLATE_ID "TMPL6gP7fXMxS"
-#define BLYNK_TEMPLATE_NAME "Smart Home"
-#define BLYNK_AUTH_TOKEN "lkM5hQg2XQjv_kwpEneU5fyOTvr-zHdW"
+//Smart Plant Pot
+#define BLYNK_TEMPLATE_ID "TMPL6wKNtCWZG"
+#define BLYNK_TEMPLATE_NAME "Smart Plant Pot"
+#define BLYNK_AUTH_TOKEN "odZkXdRoUMBsHJ2KAJF6HJUTiZUaevKn"
 
+#include <Arduino.h>
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
+#include <SPI.h>
+#include <Preferences.h>
+#include <BluetoothSerial.h>
+#include <nvs_flash.h>
+#include <BH1750.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <SPI.h>
-#include <MFRC522.h>
-#include <ESP32Servo.h>
+
+// BLE
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
-#include <DHT.h>  
 
-// ==== Blynk ảo & phần cứng ====
+// Virtual Pins
 #define VIRTUAL_TEMP V0
 #define VIRTUAL_HUMID V1
-#define VIRTUAL_RAIN V2
-#define VIRTUAL_FLAME V3
-#define VIRTUAL_GAS V4
-#define VIRTUAL_DOOR V5
-#define VIRTUAL_GARAGE_OPEN V6
-#define VIRTUAL_GARAGE_CLOSE V7 
+#define VIRTUAL_MOIST V2
+#define VIRTUAL_LED V3
+#define VIRTUAL_PUMP V4
+#define VIRTUAL_LIGHT V5
 
-#define SS_PIN 5
-#define RST_PIN 16
-#define BUZZER_PIN 12
-#define PIN_SG90 27
-#define PIN_SG90_2 32
-#define RAIN_SENSOR_PIN 34
-#define FLAME_SENSOR_PIN 33
-#define GAS_SENSOR_PIN 35
-#define BUTTON1_PIN 26
-#define BUTTON2_PIN 14      
-#define DHTPIN 15             
-#define DHTTYPE DHT11 
-#define SERVO_PIN 25
+// Hardware Pins
+#define LED_PIN 26
+#define DHTPIN 5
+#define DHTTYPE DHT11
+#define PUMP_PIN 18
+const int moisturePin = 34;
 
-WidgetTerminal terminal(V8);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+DHT dht(DHTPIN, DHTTYPE);
+BH1750 lightMeter(0x23); // địa chỉ mặc định BH1750
 
 // ==== BLE setup ====
 BLECharacteristic *pBLECharacteristic;
@@ -67,7 +67,7 @@ class BLECallback : public BLECharacteristicCallbacks {
 };
 
 void setupBLE() {
-  BLEDevice::init("SmartHome");
+  BLEDevice::init("SmartPlantPot");
   BLEServer *pServer = BLEDevice::createServer();
   BLEService *pService = pServer->createService("12345678-1234-1234-1234-1234567890ab");
 
@@ -84,21 +84,8 @@ void setupBLE() {
   pAdvertising->start();
 }
 
-MFRC522 mfrc522(SS_PIN, RST_PIN);
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-Servo sg90, sg90_2, sg360;
-DHT dht(DHTPIN, DHTTYPE); 
-
-byte validUID1[4] = {0x13, 0xA2, 0x1A, 0x2D};
-byte validUID2[4] = {0x5A, 0xB2, 0xB5, 0x02};
-
-bool doorOpen = false;
 String ssid_input = "";
 String password_input = "";
-bool reverseDirection = false;
-
-bool garageForward = false;
-bool garageReverse = false;
 
 void setup_wifi() {
   WiFi.begin(ssid_input.c_str(), password_input.c_str());
@@ -111,156 +98,36 @@ void setup_wifi() {
   if (WiFi.status() == WL_CONNECTED) {
     wifiReady = true;
     bleStatus = "✅ Kết nối WiFi thành công!";
-    terminal.println("✅ Kết nối WiFi thành công!");
   } else {
     bleStatus = "❌ Kết nối WiFi thất bại!";
-    terminal.println("❌ Kết nối WiFi thất bại!");
   }
 
   pBLECharacteristic->setValue(bleStatus);
   pBLECharacteristic->notify();
 }
 
-bool compareUID(byte *cardUID, byte *targetUID) {
-  for (byte i = 0; i < 4; i++) {
-    if (cardUID[i] != targetUID[i]) return false;
-  }
-  return true;
-}
-
-void beep(int duration) {
-  digitalWrite(BUZZER_PIN, HIGH);
-  delay(duration);
-  digitalWrite(BUZZER_PIN, LOW);
-}
-
-void saveDoorState(bool state) { doorOpen = state; }
-
-void restoreDoorState() {
-  if (doorOpen) {
-    sg90.write(90);
-    doorOpen = false;
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Door closed");
-    terminal.println("Door closed");
-  }
-}
-
-void checkRFID() {
-  if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
-    lcd.setCursor(0, 0);
-    lcd.print("Scan card...     ");
-    terminal.println("Scan card...     ");
-    return;
-  }
-
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("UID: ");
-  for (byte i = 0; i < mfrc522.uid.size; i++) {
-    lcd.print(mfrc522.uid.uidByte[i], HEX);
-    lcd.print(" ");
-  }
-
-  if (compareUID(mfrc522.uid.uidByte, validUID1) || compareUID(mfrc522.uid.uidByte, validUID2)) {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Access Granted");
-    terminal.println("Access Granted");
-    Blynk.virtualWrite(VIRTUAL_DOOR, HIGH);
-
-    beep(500);
-    delay(2000);
-
-    sg90.write(180);
-    saveDoorState(true);
-    delay(5000);
-    sg90.write(90);
-    saveDoorState(false);
-
-    Blynk.virtualWrite(VIRTUAL_DOOR, LOW);
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Door closed");
-    terminal.println("Door closed");
-  } else {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Access Denied");
-    terminal.println("Access Denied");
-    beep(500);
-  }
-
-  mfrc522.PICC_HaltA();
-}
-
-void readSensors() {
-  float temperature = dht.readTemperature();
-  float humidity = dht.readHumidity();
-
-  if (isnan(temperature) || isnan(humidity)) {
-    return;
-  }
-
-  Blynk.virtualWrite(VIRTUAL_TEMP, temperature);
-  Blynk.virtualWrite(VIRTUAL_HUMID, humidity);
-
-  lcd.setCursor(0, 1);
-  lcd.print("T:"); lcd.print(temperature); lcd.print("C ");
-  lcd.print("H:"); lcd.print(humidity); lcd.print("%");
-  terminal.print("T:"); terminal.print(temperature); terminal.print("C \n");
-  terminal.print("H:"); terminal.print(humidity); terminal.print("%\n");
-  terminal.flush();
-  delay(500);
-}
-
-void updateGarageServo() {
-  if (garageForward && !garageReverse) {
-    sg360.write(180); // quay xuôi
-  } else if (garageReverse && !garageForward) {
-    sg360.write(0); // quay ngược
-  } else {
-    sg360.write(92); // dừng
-  }
-}
-
-// ===== Blynk SWITCH điều khiển servo 360 độ =====
-BLYNK_WRITE(VIRTUAL_GARAGE_OPEN) {
-  garageForward = param.asInt();
-  updateGarageServo();
-}
-
-BLYNK_WRITE(VIRTUAL_GARAGE_CLOSE) {
-  garageReverse = param.asInt();
-  updateGarageServo();
+BLYNK_WRITE(VIRTUAL_PUMP) {
+  int pumpState = param.asInt();
+  digitalWrite(PUMP_PIN, pumpState);
 }
 
 void setup() {
   Serial.begin(115200);
-  pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(RAIN_SENSOR_PIN, INPUT);
-  pinMode(FLAME_SENSOR_PIN, INPUT);
-  pinMode(BUTTON1_PIN, INPUT_PULLUP);
-  pinMode(BUTTON2_PIN, INPUT_PULLUP); 
+  lcd.begin(16, 2);
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("Khoi dong...");
-  terminal.println("Khoi dong...");
-
+  
   SPI.begin();
-  mfrc522.PCD_Init();
-
-  sg90.attach(PIN_SG90, 500, 2400);
-  sg90_2.attach(PIN_SG90_2, 500, 2400);
-  sg360.attach(SERVO_PIN);
-  sg90.write(90);
-  sg90_2.write(45);
-  sg360.write(92); // dừng ban đầu
-
-  dht.begin(); 
   setupBLE();
+  setup_wifi();
+  dht.begin();
+  Wire.begin(); // I2C
+  lightMeter.begin();
+
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(PUMP_PIN, OUTPUT);
 }
 
 void loop() {
@@ -278,75 +145,91 @@ void loop() {
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("WiFi OK. Blynk on");
-        terminal.print("WiFi OK. Blynk on");
         delay(1000);
-        restoreDoorState();
       }
     }
   }
+  Blynk.run();
 
-  if (wifiReady) {
-    Blynk.run();
-    readSensors();
-    checkRFID();
+  int temperature = dht.readTemperature();
+  int humidity = dht.readHumidity();
+  int soilMoistureValue = analogRead(moisturePin);
+  int moisture = map(soilMoistureValue, 4095, 0, 0, 100);
+  float lux = lightMeter.readLightLevel();
+
+  // Gửi dữ liệu lên Blynk
+  Blynk.virtualWrite(VIRTUAL_TEMP, temperature);
+  Blynk.virtualWrite(VIRTUAL_HUMID, humidity);
+  Blynk.virtualWrite(VIRTUAL_MOIST, moisture);
+  Blynk.virtualWrite(VIRTUAL_LIGHT, lux);
+
+  // Điều khiển máy bơm tự động
+  if (moisture <= 30) {
+    digitalWrite(PUMP_PIN, HIGH);
+    Blynk.virtualWrite(VIRTUAL_PUMP, 1);
+  } else if (moisture >= 60) {
+    digitalWrite(PUMP_PIN, LOW);
+    Blynk.virtualWrite(VIRTUAL_PUMP, 0);
   }
 
-  int rainState = digitalRead(RAIN_SENSOR_PIN);
-  Blynk.virtualWrite(VIRTUAL_RAIN, rainState == LOW ? 1 : 0);
-  if (rainState == LOW) {
-    sg90_2.write(0);
+  // Điều khiển đèn LED
+  if (lux < 50) {
+    digitalWrite(LED_PIN, HIGH);
+    Blynk.virtualWrite(VIRTUAL_LED, 1);
   } else {
-    sg90_2.write(45);
+    digitalWrite(LED_PIN, LOW);
+    Blynk.virtualWrite(VIRTUAL_LED, 0);
   }
 
-  int flameState = analogRead(FLAME_SENSOR_PIN);
-  if (flameState >= 200) {
-    Blynk.virtualWrite(VIRTUAL_FLAME, LOW);
+  // LCD: Hiển thị nhiệt độ & độ ẩm
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Nhiet: "); lcd.print(temperature); lcd.print("C");
+  lcd.setCursor(0, 1);
+  lcd.print("Do am: "); lcd.print(humidity); lcd.print("%");
+  delay(2500);
+
+  // LCD: Độ ẩm đất
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Do am dat: ");
+  lcd.setCursor(0, 1);
+  lcd.print(moisture); lcd.print(" %");
+  delay(2500);
+
+  // LCD: Cường độ ánh sáng
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Anh sang: ");
+  lcd.setCursor(0, 1);
+  lcd.print((int)lux); lcd.print(" lux");
+  delay(2500);
+
+  // LCD: Trạng thái WiFi
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi: ");
+  if (WiFi.status() == WL_CONNECTED) {
+    lcd.print("OK");
+    lcd.setCursor(0, 1);
+    lcd.print(WiFi.localIP());
   } else {
-    Blynk.virtualWrite(VIRTUAL_FLAME, HIGH);
+    lcd.print("FAIL");
+    lcd.setCursor(0, 1);
+    lcd.print("Dang ket noi...");
   }
+  delay(2500);
 
-  int gasState = analogRead(GAS_SENSOR_PIN);
-  if (gasState <= 800){
-    Blynk.virtualWrite(VIRTUAL_GAS, LOW);
-  } else {
-    Blynk.virtualWrite(VIRTUAL_GAS, HIGH);
-  }
-
-  bool flameDetected = (flameState <= 200);
-  bool gasDetected = (gasState > 1000);
-  if (flameDetected || gasDetected) {
-    // Mở cửa
-    sg90.write(180);
-    saveDoorState(true);
-    Blynk.virtualWrite(VIRTUAL_DOOR, HIGH);
-
-    // Còi kêu liên tục cho đến khi an toàn
-    while (flameDetected || gasDetected) {
-      beep(1000);
-      delay(300);
-
-      flameDetected = (analogRead(FLAME_SENSOR_PIN) <= 200);
-      gasDetected = (analogRead(GAS_SENSOR_PIN) > 1000);
+  // Serial thủ công
+  if (Serial.available()) {
+    char cmd = Serial.read();
+    if (cmd == '1') {
+      digitalWrite(PUMP_PIN, HIGH);
+      Blynk.virtualWrite(VIRTUAL_PUMP, 1);
+    } else if (cmd == '0') {
+      digitalWrite(PUMP_PIN, LOW);
+      Blynk.virtualWrite(VIRTUAL_PUMP, 0);
     }
-
-    // Khi hết nguy hiểm: đóng cửa
-    sg90.write(90);
-    saveDoorState(false);
-    Blynk.virtualWrite(VIRTUAL_DOOR, LOW);
   }
 
-  // Nút vật lý điều khiển servo 360
-  bool currentButtonState = digitalRead(BUTTON1_PIN) == LOW;
-  bool reverseButtonState = digitalRead(BUTTON2_PIN) == LOW;
-  if (currentButtonState && !reverseButtonState) {
-    sg360.write(180);
-  } else if (reverseButtonState && !currentButtonState) {
-    sg360.write(0);
-  } else if (!garageForward && !garageReverse) {
-    sg360.write(92); // chỉ dừng nếu cả Blynk và nút đều tắt
-  }
-
-  delay(1500);
 }
-
