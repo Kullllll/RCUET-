@@ -1,7 +1,7 @@
 // BLYNK
-#define BLYNK_TEMPLATE_ID "TMPL6Dgu5mlcc"
+#define BLYNK_TEMPLATE_ID "TMPL6b6Y_M12h"
 #define BLYNK_TEMPLATE_NAME "SmartPlantPot"
-#define BLYNK_AUTH_TOKEN "VNGglgEkc6H4s0JJnUNuFvZj6JRVyT8A"
+#define BLYNK_AUTH_TOKEN "V5pHo4wXmxv674e8SeUq93wbm96VJCeN"
 
 #include <Arduino.h>
 #include <WiFi.h>
