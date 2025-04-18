@@ -9,6 +9,7 @@
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
 #include <DHT_U.h>
+#include <SPI.h>
 #include <Preferences.h>
 #include <BluetoothSerial.h>
 #include <nvs_flash.h>
@@ -40,35 +41,28 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 DHT dht(DHTPIN, DHTTYPE);
 BH1750 lightMeter(0x23); // địa chỉ mặc định BH1750
 
-BluetoothSerial SerialBT;
-Preferences preferences;
-
-String ssid = "", password = "";
+// ==== BLE setup ====
 BLECharacteristic *pBLECharacteristic;
-std::string wifiStatus = "⏳ Chờ dữ liệu WiFi...";
-bool newCredentialsReceived = false;
+std::string bleStatus = "⏳ Đang chờ dữ liệu từ BLE...";
+bool newBLEDataReceived = false;
+String bleReceivedData = "";
+bool wifiReady = false;
 
 class BLECallback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) override {
     std::string value = pCharacteristic->getValue();
     if (value.length() > 0) {
-      String data = String(value.c_str());
-      int comma = data.indexOf(',');
-      if (comma != -1) {
-        ssid = data.substring(0, comma);
-        password = data.substring(comma + 1);
-        ssid.trim(); password.trim();
-        newCredentialsReceived = true;
-        Serial.println("✅ Nhận BLE:");
-        Serial.println("SSID: " + ssid);
-        Serial.println("PASS: " + password);
-      }
+      bleReceivedData = String(value.c_str());
+      bleReceivedData.trim();
+      newBLEDataReceived = true;
+
+      pCharacteristic->setValue(bleStatus);
+      pCharacteristic->notify();
     }
   }
 
   void onRead(BLECharacteristic *pCharacteristic) override {
-    pCharacteristic->setValue(wifiStatus);
-    Serial.println("📤 BLE Read yêu cầu → gửi lại trạng thái WiFi");
+    pCharacteristic->setValue(bleStatus);
   }
 };
 
@@ -79,78 +73,82 @@ void setupBLE() {
 
   pBLECharacteristic = pService->createCharacteristic(
     "abcdefab-1234-5678-90ab-abcdefabcdef",
-    BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ
+    BLECharacteristic::PROPERTY_WRITE |
+    BLECharacteristic::PROPERTY_READ |
+    BLECharacteristic::PROPERTY_NOTIFY
   );
 
   pBLECharacteristic->setCallbacks(new BLECallback());
   pService->start();
-
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->start();
-  Serial.println("🔵 BLE đang chờ SSID,PASS từ LightBlue...");
 }
 
-void connectToWiFiAndBlynk() {
-  WiFi.disconnect(); delay(1000);
-  WiFi.begin(ssid.c_str(), password.c_str());
+String ssid_input = "";
+String password_input = "";
 
+void setup_wifi() {
+  WiFi.begin(ssid_input.c_str(), password_input.c_str());
   int retry = 0;
   while (WiFi.status() != WL_CONNECTED && retry < 20) {
-    delay(500); Serial.print(".");
+    delay(500);
     retry++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    wifiStatus = "✅ WiFi Connected!";
-    Serial.print("\n📶 IP: "); Serial.println(WiFi.localIP());
-    Blynk.begin(BLYNK_AUTH_TOKEN, ssid.c_str(), password.c_str());
+    wifiReady = true;
+    bleStatus = "✅ Kết nối WiFi thành công!";
   } else {
-    wifiStatus = "❌ Kết nối thất bại!";
-    Serial.println("\n❌ Kết nối WiFi thất bại!");
+    bleStatus = "❌ Kết nối WiFi thất bại!";
   }
 
-  pBLECharacteristic->setValue(wifiStatus);
+  pBLECharacteristic->setValue(bleStatus);
   pBLECharacteristic->notify();
-}
-
-void setup_wifi() {
-  WiFi.disconnect(true); delay(1000);
-  setupBLE();
-
-  Serial.println("⏳ Chờ dữ liệu BLE (SSID,PASS):");
-  while (ssid == "" || password == "") delay(500);
-
-  connectToWiFiAndBlynk();
 }
 
 BLYNK_WRITE(VIRTUAL_PUMP) {
   int pumpState = param.asInt();
   digitalWrite(PUMP_PIN, pumpState);
-  Serial.println(pumpState ? "🟢 Bơm bật" : "🔴 Bơm tắt");
 }
 
 void setup() {
-  Serial.begin(115200); delay(1000);
+  Serial.begin(115200);
+  lcd.begin(16, 2);
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Khoi dong...");
+  
+  SPI.begin();
+  setupBLE();
   setup_wifi();
   dht.begin();
   Wire.begin(); // I2C
   lightMeter.begin();
-  lcd.begin(16, 2);
-  lcd.backlight();
-
-  lcd.setCursor(0, 0);
-  lcd.print(" Smart Plant Pot ");
-  Serial.print("dang khoi tao");
-  lcd.setCursor(0, 1);
-  lcd.print("   Dang khoi tao  ");
-  delay(2000);
-  lcd.clear();
 
   pinMode(LED_PIN, OUTPUT);
   pinMode(PUMP_PIN, OUTPUT);
 }
 
 void loop() {
+  if (!wifiReady && newBLEDataReceived) {
+    if (bleReceivedData.indexOf(',') != -1) {
+      int splitIndex = bleReceivedData.indexOf(',');
+      ssid_input = bleReceivedData.substring(0, splitIndex);
+      password_input = bleReceivedData.substring(splitIndex + 1);
+      ssid_input.trim();
+      password_input.trim();
+
+      setup_wifi();
+      if (wifiReady) {
+        Blynk.begin(BLYNK_AUTH_TOKEN, ssid_input.c_str(), password_input.c_str());
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("WiFi OK. Blynk on");
+        delay(1000);
+      }
+    }
+  }
   Blynk.run();
 
   int temperature = dht.readTemperature();
@@ -169,7 +167,7 @@ void loop() {
   if (moisture <= 30) {
     digitalWrite(PUMP_PIN, HIGH);
     Blynk.virtualWrite(VIRTUAL_PUMP, 1);
-  } else if (moisture >= 60) {
+  } else if (moisture > 45) {
     digitalWrite(PUMP_PIN, LOW);
     Blynk.virtualWrite(VIRTUAL_PUMP, 0);
   }
@@ -227,20 +225,11 @@ void loop() {
     char cmd = Serial.read();
     if (cmd == '1') {
       digitalWrite(PUMP_PIN, HIGH);
-      Serial.println("🟢 Bơm bật");
       Blynk.virtualWrite(VIRTUAL_PUMP, 1);
     } else if (cmd == '0') {
       digitalWrite(PUMP_PIN, LOW);
-      Serial.println("🔴 Bơm tắt");
       Blynk.virtualWrite(VIRTUAL_PUMP, 0);
     }
   }
 
-  if (newCredentialsReceived) {
-    newCredentialsReceived = false;
-    Serial.println("🔁 Kết nối lại WiFi với dữ liệu mới...");
-    connectToWiFiAndBlynk();
-  }
 }
-
-
