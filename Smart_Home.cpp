@@ -1,4 +1,4 @@
-//Smart Plant Pot
+//Smart Home
 #define BLYNK_TEMPLATE_ID "TMPL6wKNtCWZG"
 #define BLYNK_TEMPLATE_NAME "Smart Plant Pot"
 #define BLYNK_AUTH_TOKEN "odZkXdRoUMBsHJ2KAJF6HJUTiZUaevKn"
