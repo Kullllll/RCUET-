@@ -16,6 +16,7 @@
 #include <BH1750.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include "time.h"
 
 // BLE
 #include <BLEDevice.h>
@@ -40,6 +41,11 @@ const int moisturePin = 34;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 DHT dht(DHTPIN, DHTTYPE);
 BH1750 lightMeter(0x23); // địa chỉ mặc định BH1750
+
+//Khai báo lấy realtime
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 7 * 3600;  // GMT+7
+const int   daylightOffset_sec = 0;
 
 // ==== BLE setup ====
 BLECharacteristic *pBLECharacteristic;
@@ -122,6 +128,7 @@ void setup() {
   SPI.begin();
   setupBLE();
   setup_wifi();
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   dht.begin();
   Wire.begin(); // I2C
   lightMeter.begin();
@@ -173,13 +180,37 @@ void loop() {
   }
 
   // Điều khiển đèn LED
-  if (lux < 50) {
-    digitalWrite(LED_PIN, HIGH);
-    Blynk.virtualWrite(VIRTUAL_LED, 1);
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Failed to get time");
+    return;
+  }
+
+  int currentHour = timeinfo.tm_hour;
+  if (currentHour >= 6 && currentHour < 18) {
+    if (lux < 50) {
+      digitalWrite(LED_PIN, HIGH);
+      Blynk.virtualWrite(VIRTUAL_LED, 1);
+    } else {
+      digitalWrite(LED_PIN, LOW);
+      Blynk.virtualWrite(VIRTUAL_LED, 0);
+    }
   } else {
-    digitalWrite(LED_PIN, LOW);
+    digitalWrite(LED_PIN, LOW);  
     Blynk.virtualWrite(VIRTUAL_LED, 0);
   }
+
+  // LCD: Hiển thị thời gian
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Thoi gian: ");
+  lcd.setCursor(0, 1);
+  lcd.print(timeinfo.tm_hour); lcd.print(":");
+  lcd.print(timeinfo.tm_min); lcd.print(":");
+  lcd.print(timeinfo.tm_sec);
+  delay(2500);
 
   // LCD: Hiển thị nhiệt độ & độ ẩm
   lcd.clear();
@@ -231,5 +262,4 @@ void loop() {
       Blynk.virtualWrite(VIRTUAL_PUMP, 0);
     }
   }
-
 }
